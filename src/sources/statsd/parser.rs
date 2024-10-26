@@ -47,6 +47,8 @@ impl Parser {
         let name = sanitize_key(key, self.sanitize);
         let metric_type = parts[1];
 
+        // This should be cleaned up by parsing each part with a prefix match
+
         // sampling part is optional and comes after metric type part
         let sampling = parts.get(2).filter(|s| s.starts_with('@'));
         let sample_rate = if let Some(s) = sampling {
@@ -63,6 +65,17 @@ impl Parser {
         };
         let tags = tags.filter(|s| s.starts_with('#'));
         let tags = tags.map(parse_tags).transpose()?;
+
+        // Unix timestamp part is optional. It comes after tags 
+        //The Unix timestamp should be a valid positive number in the past. Only GAUGE and COUNT metrics are supported.
+        let timestamp = match (sampling.is_none(), tags.is_none()) {
+            (false, false) => parts.get(2),
+            (false, true) => parts.get(3),
+            (true, true) => parts.get(4),
+            (true, false) => parts.get(3),
+        };
+        let timestamp = timestamp.filter(|s| s.starts_with('T'));
+        let timestamp = timestamp.map(|s| parse_timestamp(s)).transpose()?;
 
         let metric = match metric_type {
             "c" => {
@@ -151,6 +164,16 @@ fn parse_tags(input: &&str) -> Result<MetricTags, ParseError> {
         .split(',')
         .map(extract_tag_key_and_value)
         .collect())
+}
+
+fn parse_timestamp(input: &&str) -> Result<DateTime<Utc>, ParseError> {
+    if !input.starts_with('T') || input.len() < 2 {
+        return Err(ParseError::Malformed(
+            "expected non empty 'T'-prefixed timestamp component",
+        ));
+    }
+    
+    input[1..]
 }
 
 fn parse_direction(input: &str) -> Result<Option<f64>, ParseError> {
