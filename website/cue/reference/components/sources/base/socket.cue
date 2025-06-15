@@ -148,16 +148,26 @@ base: components: sources: socket: configuration: {
 				description:   "Influxdb-specific decoding options."
 				relevant_when: "codec = \"influxdb\""
 				required:      false
-				type: object: options: lossy: {
-					description: """
-						Determines whether or not to replace invalid UTF-8 sequences instead of failing.
+				type: object: options: {
+					lossy: {
+						description: """
+							Determines whether or not to replace invalid UTF-8 sequences instead of failing.
 
-						When true, invalid UTF-8 sequences are replaced with the [`U+FFFD REPLACEMENT CHARACTER`][U+FFFD].
+							When true, invalid UTF-8 sequences are replaced with the [`U+FFFD REPLACEMENT CHARACTER`][U+FFFD].
 
-						[U+FFFD]: https://en.wikipedia.org/wiki/Specials_(Unicode_block)#Replacement_character
-						"""
-					required: false
-					type: bool: default: true
+							[U+FFFD]: https://en.wikipedia.org/wiki/Specials_(Unicode_block)#Replacement_character
+							"""
+						required: false
+						type: bool: default: true
+					}
+					delimiter: {
+						description: """
+							The character to add between a line's measurement name and each of its field names
+							when constructing metric names.
+							"""
+						required: false
+						type: char: default: '_'			
+					}
 				}
 			}
 			json: {

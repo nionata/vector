@@ -67,6 +67,11 @@ pub struct InfluxdbDeserializerOptions {
     )]
     #[derivative(Default(value = "default_lossy()"))]
     pub lossy: bool,
+
+    /// The character to add between a line's measurement name and each of its field names
+	/// when constructing metric names.
+    #[derivative(Default(value = '_'))]
+    pub delimiter: char,
 }
 
 /// Deserializer for the influxdb line protocol
@@ -75,12 +80,15 @@ pub struct InfluxdbDeserializerOptions {
 pub struct InfluxdbDeserializer {
     #[derivative(Default(value = "default_lossy()"))]
     lossy: bool,
+
+    #[derivative(Default(value = '_'))]
+    delimiter: char,
 }
 
 impl InfluxdbDeserializer {
     /// new constructs a new InfluxdbDeserializer
-    pub fn new(lossy: bool) -> Self {
-        Self { lossy }
+    pub fn new(lossy: bool, delimiter: char) -> Self {
+        Self { lossy, delimiter }
     }
 }
 
@@ -126,7 +134,7 @@ impl Deserializer for InfluxdbDeserializer {
                         };
                         Some(Event::Metric(
                             Metric::new(
-                                format!("{0}_{1}", measurement, f.0),
+                                format!("{0}{1}{2}", measurement, self.delimiter, f.0),
                                 MetricKind::Absolute,
                                 MetricValue::Gauge { value: val },
                             )
@@ -150,6 +158,7 @@ impl From<&InfluxdbDeserializerConfig> for InfluxdbDeserializer {
     fn from(config: &InfluxdbDeserializerConfig) -> Self {
         Self {
             lossy: config.influxdb.lossy,
+            delimiter: config.influxdb.delimiter
         }
     }
 }
@@ -166,7 +175,7 @@ mod tests {
 
     #[test]
     fn deserialize_success() {
-        let deser = InfluxdbDeserializer::new(true);
+        let deser = InfluxdbDeserializer::new(true, '_');
         let now = chrono::Utc::now();
         let now_timestamp_nanos = now.timestamp_nanos_opt().unwrap();
         let buffer = Bytes::from(format!(
@@ -204,8 +213,47 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_success_custom_delimiter() {
+        let deser = InfluxdbDeserializer::new(true, '.');
+        let now = chrono::Utc::now();
+        let now_timestamp_nanos = now.timestamp_nanos_opt().unwrap();
+        let buffer = Bytes::from(format!(
+            "cpu,host=A,region=west usage_system=64i,usage_user=10i {now_timestamp_nanos}"
+        ));
+        let events = deser.parse(buffer, LogNamespace::default()).unwrap();
+        assert_eq!(events.len(), 2);
+
+        assert_eq!(
+            events[0].as_metric(),
+            &Metric::new(
+                "cpu.usage_system",
+                MetricKind::Absolute,
+                MetricValue::Gauge { value: 64. },
+            )
+            .with_tags(Some(MetricTags::from_iter([
+                ("host".to_string(), "A".to_string()),
+                ("region".to_string(), "west".to_string()),
+            ])))
+            .with_timestamp(Some(now))
+        );
+        assert_eq!(
+            events[1].as_metric(),
+            &Metric::new(
+                "cpu.usage_user",
+                MetricKind::Absolute,
+                MetricValue::Gauge { value: 10. },
+            )
+            .with_tags(Some(MetricTags::from_iter([
+                ("host".to_string(), "A".to_string()),
+                ("region".to_string(), "west".to_string()),
+            ])))
+            .with_timestamp(Some(now))
+        );
+    }
+
+    #[test]
     fn deserialize_error() {
-        let deser = InfluxdbDeserializer::new(true);
+        let deser = InfluxdbDeserializer::new(true, '_');
         let buffer = Bytes::from("some invalid string");
         assert!(deser.parse(buffer, LogNamespace::default()).is_err());
     }
